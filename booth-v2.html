@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="buildtag">build SEP11-A pywebview</div>
+<div id="buildtag">build SEP11-B pywebview</div>
 <script>
   /* Self-calibrating fullscreen: report THIS window's title-bar height to the
      positioner script via the window title, so it can shift the window up by
@@ -4651,6 +4651,16 @@ function BrowseMode({ lib, addToQueue, flash, homeSignal }) {
   // reset the scrollbar (more reliable than scrollTop=0 inside an effect,
   // which can race with image loads).
   const gridKey = `${home ? 'home' : ''}|${cat || ''}|${deferredSearch}|${letter || ''}`;
+  // All Songs (no category, letter or search) is the whole library — thousands
+  // of tiles, all re-rendered by the 1s session tick, which froze the slower
+  // booths.  So it shows a page at a time with "Show more" at the bottom.  Any
+  // change of view (gridKey) starts again at one page — reset during render,
+  // so a grown count from last time never paints.
+  const ALL_SONGS_PAGE = 400;
+  const [shownCount, setShownCount] = React.useState(ALL_SONGS_PAGE);
+  const [shownFor, setShownFor] = React.useState(gridKey);
+  if (shownFor !== gridKey) { setShownFor(gridKey); setShownCount(ALL_SONGS_PAGE); }
+  const allSongsView = !cat && !letter && !deferredSearch;
 
   // Leaving / returning to the home page.  Both clear the letter filter so
   // nobody lands in a category silently narrowed to "S".
@@ -4789,7 +4799,9 @@ function BrowseMode({ lib, addToQueue, flash, homeSignal }) {
   // reads first and streaming is visibly the fallback, not a peer. Outside
   // search it stays one plain grid.
   const groups = React.useMemo(() => {
-    if (!deferredSearch || !searchHits) return [{ key: 'all', label: null, items: list }];
+    if (!deferredSearch || !searchHits) {
+      return [{ key: 'all', label: null, items: allSongsView ? list.slice(0, shownCount) : list }];
+    }
     const ours   = searchHits.local.items.filter(matchLetter);
     const theirs = [...ytLive, ...searchHits.yt.items.filter(matchLetter)];
     const g = [];
@@ -4798,7 +4810,7 @@ function BrowseMode({ lib, addToQueue, flash, homeSignal }) {
     if (theirs.length) g.push({ key: 'theirs', label: t('fromStreaming'),
                                 color: '#67e8f9', icon: '\u{1F4E1}', items: theirs.slice(0, 200) });
     return g;
-  }, [deferredSearch, searchHits, ytLive, letter, list, t]);
+  }, [deferredSearch, searchHits, ytLive, letter, list, allSongsView, shownCount, t]);
 
   // A-Z letter strip — when a letter is picked, the grid narrows to songs
   // whose ARTIST starts with that character.  Click again to clear.  Greyed
@@ -4996,7 +5008,7 @@ function BrowseMode({ lib, addToQueue, flash, homeSignal }) {
       {/* HOME — v1-style category tiles.  This is the first thing a customer
           sees on a cold booth; tapping a tile drops into that category's song
           grid, where the same categories live on as the mini pill row. */}
-      {home && !search && (
+      {home && !deferredSearch && (
         <React.Fragment>
           <div style={{ flexShrink: 0, marginBottom: -4, fontSize: 11,
             fontWeight: 800, letterSpacing: 1.5, color: '#8b8b94',
@@ -5043,8 +5055,11 @@ function BrowseMode({ lib, addToQueue, flash, homeSignal }) {
           and the scrollbar always starts at the top.  Explicit pointer/wheel
           properties make sure mouse-wheel scrolling works on desktop test
           machines without a touchscreen (some parent layouts can otherwise
-          swallow wheel events through default behaviour). */}
-      {(!home || !!search) && (
+          swallow wheel events through default behaviour).
+          Home vs grid keys off deferredSearch, not search: while a search is
+          catching up the home tiles stay on screen, rather than the grid
+          mounting for a frame with the whole library behind it. */}
+      {(!home || !!deferredSearch) && (
       <div key={gridKey} ref={setGridScrollRef}
         style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4,
         touchAction: 'pan-y',
@@ -5104,6 +5119,18 @@ function BrowseMode({ lib, addToQueue, flash, homeSignal }) {
               </div>
             </div>
           ))
+        )}
+        {allSongsView && list.length > shownCount && (
+          <button onClick={() => setShownCount(n => n + ALL_SONGS_PAGE)}
+            style={{ display: 'block', margin: '16px auto 4px', padding: '12px 26px',
+              borderRadius: 10, border: '1px solid rgba(251,191,36,0.45)',
+              background: 'rgba(251,191,36,0.1)', color: '#fbbf24',
+              fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
+            +{Math.min(ALL_SONGS_PAGE, list.length - shownCount).toLocaleString()} {t('moreSuffix')}
+            <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, opacity: 0.75 }}>
+              {shownCount.toLocaleString()} / {list.length.toLocaleString()}
+            </span>
+          </button>
         )}
       </div>
       )}

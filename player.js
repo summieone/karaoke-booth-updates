@@ -88,8 +88,19 @@
     m2.start(t2); m4.start(t2); f2.start(t2);
     this.modG1 = modG1; this.modG2 = modG2;
     this.mg1 = mg1; this.mg2 = mg2; this.mg3 = mg3; this.mg4 = mg4;
+    // Kept so stop() can shut the shifter down completely when the key goes
+    // back to normal - its six looping sources otherwise run for ever.
+    this._sources = [m1, m2, m3, m4, f1, f2];
+    this._nodes = [this.input, this.output, mg1, mg2, mg3, mg4, modG1, modG2, d1, d2, mix1, mix2];
     this.setSemitones(0);
   }
+  Jungle.prototype.stop = function () {
+    this._sources.forEach(function (src) {
+      try { src.stop(); } catch (e) {}
+      try { src.disconnect(); } catch (e) {}
+    });
+    this._nodes.forEach(function (n) { try { n.disconnect(); } catch (e) {} });
+  };
   Jungle.prototype._setDelay = function (d) {
     this.modG1.gain.setTargetAtTime(0.5 * d, 0, 0.010);
     this.modG2.gain.setTargetAtTime(0.5 * d, 0, 0.010);
@@ -915,61 +926,110 @@
         this._lastMultiplexSong = song;
       }
       if (!this.hasMultiplex) {
-        // If we'd previously routed through the multiplex graph, just leave
-        // gains where they are — the gains for non-multiplex songs default
-        // to "stereo passthrough" which is fine.
+        // Plain song. Only touch Web Audio if this element is already routed
+        // (by an earlier Multiplex song or a key change): send it straight to
+        // the speakers in stereo - no splitter, and no pitch shifter unless
+        // the key is actually changed.
+        if (this._mediaSrcEl === videoEl) this._rewireVideo();
         return;
       }
-      // Build the graph if we haven't already.  MediaElementSource is
-      // one-shot per element, so once wired it stays wired.
-      if (!this._multiplexReady || this._mediaSrcEl !== videoEl) {
-        try {
-          if (!this._audioCtx) {
-            this._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-          }
-          this._audioCtx.resume().catch(function () {});
-          if (this._mediaSrcEl !== videoEl) {
-            // Different element — can't rewire.  Bail; user is on a
-            // different media element this session.
-            if (this._multiplexReady) return;
-            this._mediaSrc   = this._audioCtx.createMediaElementSource(videoEl);
-            this._mediaSrcEl = videoEl;
-          }
-          var splitter = this._audioCtx.createChannelSplitter(2);
-          var merger   = this._audioCtx.createChannelMerger(2);
-          this._gainMusicL  = this._audioCtx.createGain();
-          this._gainMusicR  = this._audioCtx.createGain();
-          this._gainVocalsR = this._audioCtx.createGain();
-          // Pitch shifter (Jungle) sits between the source and the splitter
-          // so key changes apply to BOTH the music and vocals channels.
+      // Multiplex needs the splitter/gain graph even with vocals off (music is
+      // copied to both channels). It does NOT need the pitch shifter - that is
+      // only inserted while the key is changed.
+      if (!this._ensureVideoSource(videoEl)) return;
+      try {
+        this._ensureMultiplexGraph();
+      } catch (e) {
+        console.warn('[Player] multiplex setup failed:', e);
+        return;
+      }
+      this._rewireVideo();
+      this._applyVocalGains();
+    }
+
+    // The pitch shifter only ever goes on the element the current song plays
+    // on - never on an idle element that an earlier song left routed.
+    _songIsAudioOnly() {
+      var song = this.currentSong;
+      return !!(song && (song.type === 'cdg' || song.type === 'audio'));
+    }
+    _songIsYT() {
+      var song = this.currentSong;
+      return !!(song && (song.isYouTube || song.isYt));
+    }
+
+    // createMediaElementSource is one-shot per element: create once, keep it.
+    _ensureVideoSource(videoEl) {
+      if (this._mediaSrcEl === videoEl && this._mediaSrc) return true;
+      if (this._mediaSrcEl && this._mediaSrcEl !== videoEl) return false;  // different element: can't rewire
+      try {
+        if (!this._audioCtx) {
+          this._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        this._audioCtx.resume().catch(function () {});
+        this._mediaSrc   = this._audioCtx.createMediaElementSource(videoEl);
+        this._mediaSrcEl = videoEl;
+        return true;
+      } catch (e) {
+        console.warn('[Player] could not route video audio through Web Audio:', e);
+        return false;
+      }
+    }
+
+    _ensureMultiplexGraph() {
+      if (this._multiplexReady) return;
+      var ctx = this._audioCtx;
+      var splitter = ctx.createChannelSplitter(2);
+      var merger   = ctx.createChannelMerger(2);
+      this._gainMusicL  = ctx.createGain();
+      this._gainMusicR  = ctx.createGain();
+      this._gainVocalsR = ctx.createGain();
+      // Music (ch 0) → left always
+      splitter.connect(this._gainMusicL,  0, 0);
+      this._gainMusicL.connect(merger, 0, 0);
+      // Music (ch 0) → right when vocals OFF
+      splitter.connect(this._gainMusicR,  0, 0);
+      this._gainMusicR.connect(merger, 0, 1);
+      // Vocals (ch 1) → right when vocals ON
+      splitter.connect(this._gainVocalsR, 1, 0);
+      this._gainVocalsR.connect(merger, 0, 1);
+      merger.connect(ctx.destination);
+      this._videoSplitter = splitter;
+      this._multiplexReady = true;
+      console.log('[Player] multiplex graph wired (L=music, R=vocals)');
+    }
+
+    // (Re)connect the video element's audio for the current song and key:
+    //   source -> [pitch shifter, only while the key is changed]
+    //          -> splitter (Multiplex) or straight to the speakers (plain)
+    _rewireVideo() {
+      if (!this._mediaSrc) return;
+      var ctx = this._audioCtx;
+      try { this._mediaSrc.disconnect(); } catch (e) {}
+      if (this._jungleVideo) { try { this._jungleVideo.output.disconnect(); } catch (e) {} }
+      var target = (this.hasMultiplex && this._multiplexReady) ? this._videoSplitter : ctx.destination;
+      var head = this._mediaSrc;
+      if (this._pitchSemitones && !this._songIsAudioOnly() && !this._songIsYT()) {
+        if (!this._jungleVideo) {
           try {
-            this._jungleVideo = new Jungle(this._audioCtx);
-            this._mediaSrc.connect(this._jungleVideo.input);
-            this._jungleVideo.output.connect(splitter);
-            console.log('[Player] Jungle (video) installed');
+            this._jungleVideo = new Jungle(ctx);
+            console.log('[Player] Jungle (video) inserted');
           } catch (jerr) {
             console.warn('[Player] Jungle init failed; pitch shift will not work on video:', jerr);
             this._jungleVideo = null;
-            this._mediaSrc.connect(splitter);
           }
-          // Music (ch 0) → left always
-          splitter.connect(this._gainMusicL,  0, 0);
-          this._gainMusicL.connect(merger, 0, 0);
-          // Music (ch 0) → right when vocals OFF
-          splitter.connect(this._gainMusicR,  0, 0);
-          this._gainMusicR.connect(merger, 0, 1);
-          // Vocals (ch 1) → right when vocals ON
-          splitter.connect(this._gainVocalsR, 1, 0);
-          this._gainVocalsR.connect(merger, 0, 1);
-          merger.connect(this._audioCtx.destination);
-          this._multiplexReady = true;
-          console.log('[Player] multiplex graph wired (L=music, R=vocals)');
-        } catch (e) {
-          console.warn('[Player] multiplex setup failed:', e);
-          return;
         }
+        if (this._jungleVideo) {
+          this._mediaSrc.connect(this._jungleVideo.input);
+          this._jungleVideo.setSemitones(this._pitchSemitones);
+          head = this._jungleVideo.output;
+        }
+      } else if (this._jungleVideo) {
+        this._jungleVideo.stop();
+        this._jungleVideo = null;
+        console.log('[Player] Jungle (video) removed');
       }
-      this._applyVocalGains();
+      head.connect(target);
     }
 
     _applyVocalGains() {
@@ -999,10 +1059,24 @@
       this._pitchSemitones = semi;
       console.log('[Player] pitch =', semi, 'semitones (ratio',
                   Math.pow(2, semi / 12).toFixed(4) + ')');
-      try { if (this._jungleVideo) this._jungleVideo.setSemitones(semi); }
-      catch (e) { console.warn('[Player] video pitch err:', e); }
-      try { if (this._jungleAudio) this._jungleAudio.setSemitones(semi); }
-      catch (e) { console.warn('[Player] audio pitch err:', e); }
+      var song = this.currentSong;
+      var audioOnly = !!(song && (song.type === 'cdg' || song.type === 'audio'));
+      var isYT = !!(song && (song.isYouTube || song.isYt));
+      // The pitch shifter only exists while the key is changed.
+      try {
+        if (semi && this.video && !audioOnly && !isYT && this.video.src) {
+          if (this._ensureVideoSource(this.video)) this._rewireVideo();
+        } else if (this._mediaSrc) {
+          this._rewireVideo();
+        }
+      } catch (e) { console.warn('[Player] video pitch err:', e); }
+      try {
+        if (semi && this.audio && audioOnly && this.audio.src) {
+          this._setupAudioPitch(this.audio);
+        } else if (this._audioPitchSrc) {
+          this._rewireAudio();
+        }
+      } catch (e) { console.warn('[Player] audio pitch err:', e); }
       // Tempo sanity-check: playbackRate must stay 1.0 for pitch-only shift.
       if (this.video && this.video.src && this.video.playbackRate !== 1.0) this.video.playbackRate = 1.0;
       if (this.audio && this.audio.src && this.audio.playbackRate !== 1.0) this.audio.playbackRate = 1.0;
@@ -1018,31 +1092,57 @@
      */
     _setupAudioPitch(audioEl) {
       if (!audioEl) return;
-      if (this._audioPitchEl === audioEl && this._jungleAudio) {
-        // Already wired — just apply current pitch to the existing Jungle.
-        try { this._jungleAudio.setSemitones(this._pitchSemitones); } catch (e) {}
+      if (this._audioPitchEl === audioEl && this._audioPitchSrc) {
+        // Already routed (an earlier key change): apply the current key -
+        // inserts or removes the pitch shifter as needed.
+        this._rewireAudio();
         return;
       }
-      if (this._audioPitchEl && this._audioPitchEl !== audioEl) {
-        // Different element: can't rewire MediaElementSource.
-        try { if (this._jungleAudio) this._jungleAudio.setSemitones(this._pitchSemitones); } catch (e) {}
-        return;
-      }
+      if (this._audioPitchEl && this._audioPitchEl !== audioEl) return;  // can't rewire a different element
+      // Not routed yet. Routing is permanent for the element, so leave it on
+      // its native audio path until a key change actually needs Web Audio.
+      if (!this._pitchSemitones) return;
       try {
         if (!this._audioPitchCtx) {
           this._audioPitchCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
         this._audioPitchCtx.resume().catch(function () {});
         this._audioPitchSrc = this._audioPitchCtx.createMediaElementSource(audioEl);
-        this._jungleAudio = new Jungle(this._audioPitchCtx);
-        this._audioPitchSrc.connect(this._jungleAudio.input);
-        this._jungleAudio.output.connect(this._audioPitchCtx.destination);
         this._audioPitchEl = audioEl;
-        try { this._jungleAudio.setSemitones(this._pitchSemitones); } catch (e) {}
-        console.log('[Player] Jungle (audio) installed on <audio>');
+        this._rewireAudio();
+        console.log('[Player] <audio> routed through Web Audio for a key change');
       } catch (e) {
         console.warn('[Player] _setupAudioPitch failed; CDG/MP3 pitch will not work:', e);
       }
+    }
+
+    _rewireAudio() {
+      if (!this._audioPitchSrc) return;
+      var ctx = this._audioPitchCtx;
+      try { this._audioPitchSrc.disconnect(); } catch (e) {}
+      if (this._jungleAudio) { try { this._jungleAudio.output.disconnect(); } catch (e) {} }
+      if (this._pitchSemitones && this._songIsAudioOnly()) {
+        if (!this._jungleAudio) {
+          try {
+            this._jungleAudio = new Jungle(ctx);
+            console.log('[Player] Jungle (audio) inserted');
+          } catch (e) {
+            console.warn('[Player] Jungle init failed; CDG/MP3 pitch will not work:', e);
+            this._jungleAudio = null;
+          }
+        }
+        if (this._jungleAudio) {
+          this._audioPitchSrc.connect(this._jungleAudio.input);
+          this._jungleAudio.setSemitones(this._pitchSemitones);
+          this._jungleAudio.output.connect(ctx.destination);
+          return;
+        }
+      } else if (this._jungleAudio) {
+        this._jungleAudio.stop();
+        this._jungleAudio = null;
+        console.log('[Player] Jungle (audio) removed');
+      }
+      this._audioPitchSrc.connect(ctx.destination);
     }
 
     _broadcast() {
