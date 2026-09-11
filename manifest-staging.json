@@ -1,29 +1,29 @@
 {
-  "version": "SEP11-A",
-  "notes": "SEP11-A: welcome tour no longer freezes when the singer name or minutes arrive; placeholder names like N/A hidden from the greeting",
+  "version": "SEP11-B",
+  "notes": "SEP11-B: All Songs and search no longer draw the whole library (fixes the booth lag); plain songs play in stereo after a Multiplex song",
   "files": {
     "booth-v2.html": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/bd31d246260b75be92d7ffeed4446a58bd5ce652/booth-v2.html",
-      "sha256": "89a8719599aab406d712eb8c05040b15665f5b5c4a783fb073083dd29bb3a122"
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5356be218d44e967e9e3f6e1e170fc321a3987e1/booth-v2.html",
+      "sha256": "90be7242a2813fcfd4c0401eb83620b18561365284c8436121447633bd78b719"
     },
     "venue-logo.webp": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/bd31d246260b75be92d7ffeed4446a58bd5ce652/venue-logo.webp",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5356be218d44e967e9e3f6e1e170fc321a3987e1/venue-logo.webp",
       "sha256": "ad005bd2bd420a1c57da44d37be0947e05ebfacaad18cb8d12f3dedbe60455ad"
     },
     "player.js": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/bd31d246260b75be92d7ffeed4446a58bd5ce652/player.js",
-      "sha256": "d893b066cd16ea93a86ee329ca245817e70237b680f47abc6bb700ef2859729b"
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5356be218d44e967e9e3f6e1e170fc321a3987e1/player.js",
+      "sha256": "77aef0d6b7ca8eef33d592e82c1f36e7897952bf3578c9618053d9443020ece2"
     },
     "react.production.min.js": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/bd31d246260b75be92d7ffeed4446a58bd5ce652/react.production.min.js",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5356be218d44e967e9e3f6e1e170fc321a3987e1/react.production.min.js",
       "sha256": "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd"
     },
     "react-dom.production.min.js": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/bd31d246260b75be92d7ffeed4446a58bd5ce652/react-dom.production.min.js",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5356be218d44e967e9e3f6e1e170fc321a3987e1/react-dom.production.min.js",
       "sha256": "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d"
     },
     "babel.min.js": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/bd31d246260b75be92d7ffeed4446a58bd5ce652/babel.min.js",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5356be218d44e967e9e3f6e1e170fc321a3987e1/babel.min.js",
       "sha256": "2623a9e22809915ce789b4461154e277ddce520d5a4320c14d44332a5d0dcea0"
     }
   }
