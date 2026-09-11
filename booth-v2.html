@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="buildtag">build SEP09-B pywebview</div>
+<div id="buildtag">build SEP11-A pywebview</div>
 <script>
   /* Self-calibrating fullscreen: report THIS window's title-bar height to the
      positioner script via the window title, so it can shift the window up by
@@ -2490,113 +2490,29 @@ function kbLangToScript(lang) {
 function WelcomeOverlay({ venueName, venueTagline, logoUrl, singerName, mins, language, onLanguage, onStart, onCancel }) {
   const rootRef = React.useRef(null);
   // onStart changes identity on every App render (the session timer ticks
-  // once a second), so keep it in a ref and run the nav effect ONCE on mount.
-  // Otherwise the effect re-runs every second and resets the deck to slide 1.
+  // once a second), so keep it in a ref instead of a nav-effect dependency -
+  // otherwise the effect re-runs every second and resets the deck to slide 1.
   const onStartRef = React.useRef(onStart);
   React.useEffect(() => { onStartRef.current = onStart; }, [onStart]);
   const onLanguageRef = React.useRef(onLanguage);
   React.useEffect(() => { onLanguageRef.current = onLanguage; }, [onLanguage]);
-  // Translation helper for the deck. The HTML string below DOES depend on
-  // `language`, so when the customer picks a language the deck re-renders in
-  // it. To keep the vanilla-JS nav listeners alive across that re-injection,
-  // the nav effect is keyed on [language] (re-runs + re-attaches) — and the
-  // per-second timer re-render produces an identical string (language
-  // unchanged), so React skips the DOM update and listeners survive.
-  // slideRef remembers the current slide so a language switch doesn't snap
-  // the deck back to slide 1.
+  // Translation helper for the deck. The HTML string below depends on
+  // `language` and on the venue, logo, singer name and session minutes; the
+  // nav effect further down re-wires whenever that string changes. The
+  // per-second timer re-render produces an identical string, so React leaves
+  // the DOM alone. slideRef remembers the current slide across re-injection.
   const T = k => tr(k, language);
   const slideRef = React.useRef(0);
-
-  // Wire up navigation once the markup is in the DOM.
-  React.useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const deck = root.querySelector('#wv-deck');
-    const dots = root.querySelector('#wv-dots');
-    const prev = root.querySelector('#wv-prev');
-    const next = root.querySelector('#wv-next');
-    const progress = root.querySelector('#wv-progress');
-    if (!deck || !dots || !prev || !next || !progress) return;
-    const slides = deck.querySelectorAll('.wv-slide');
-    const total = slides.length;
-    const SLIDE_W = 1280;  // booth container is a fixed 1280px wide
-    let i = 0;
-
-    dots.innerHTML = '';
-    const dotEls = [];
-    for (let k = 0; k < total; k++) {
-      const d = document.createElement('div');
-      d.className = 'wv-dot';
-      d.addEventListener('click', () => go(k));
-      dots.appendChild(d);
-      dotEls.push(d);
-    }
-    function go(n) {
-      i = Math.max(0, Math.min(total - 1, n));
-      slideRef.current = i;
-      deck.style.transform = 'translateX(' + (-i * SLIDE_W) + 'px)';
-      dotEls.forEach((d, k) => d.classList.toggle('active', k === i));
-      prev.disabled = i === 0;
-      next.textContent = i === total - 1 ? ('🎤 ' + T('wStart')) : (T('wNext') + ' →');
-      progress.textContent = String(i + 1).padStart(2, '0') + ' / ' + String(total).padStart(2, '0');
-    }
-    const start = () => onStartRef.current && onStartRef.current();
-    function goNext() { if (i >= total - 1) start(); else go(i + 1); }
-    const onPrev = () => go(i - 1);
-    prev.addEventListener('click', onPrev);
-    next.addEventListener('click', goNext);
-    const finalBtn = root.querySelector('#wv-finalStart');
-    if (finalBtn) finalBtn.addEventListener('click', start);
-
-    function onKey(e) {
-      if (e.key === 'ArrowRight') goNext();
-      else if (e.key === 'ArrowLeft') go(i - 1);
-    }
-    document.addEventListener('keydown', onKey);
-
-    // Swipe-to-advance for the touchscreen.
-    let sx = null, sy = null;
-    function ps(e) { sx = e.clientX; sy = e.clientY; }
-    function pe(e) {
-      if (sx == null) return;
-      const dx = e.clientX - sx, dy = e.clientY - sy;
-      sx = null;
-      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
-        if (dx < 0) goNext(); else go(i - 1);
-      }
-    }
-    deck.addEventListener('pointerdown', ps);
-    deck.addEventListener('pointerup', pe);
-
-    // Language picker (event-delegated so it works regardless of how many
-    // buttons there are). Toggles the active highlight in plain JS and pushes
-    // the choice up to App, which persists it and re-renders the chrome.
-    const langBar = root.querySelector('#wv-langs');
-    function onLangClick(e) {
-      const btn = e.target.closest('[data-lang]');
-      if (!btn || !langBar) return;
-      const lang = btn.getAttribute('data-lang');
-      langBar.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('active', b === btn));
-      if (onLanguageRef.current) onLanguageRef.current(lang);
-    }
-    if (langBar) langBar.addEventListener('click', onLangClick);
-
-    go(slideRef.current);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      prev.removeEventListener('click', onPrev);
-      next.removeEventListener('click', goNext);
-      deck.removeEventListener('pointerdown', ps);
-      deck.removeEventListener('pointerup', pe);
-      if (langBar) langBar.removeEventListener('click', onLangClick);
-    };
-  }, [language]);
 
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
     c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const m = Number(mins) > 0 ? Number(mins) : 60;
-  const hello = singerName
-    ? T('wWelcomeName').replace('{name}', '<b style="color:#fbbf24">' + esc(singerName) + '</b>')
+  // Staff sometimes type a placeholder into the hub's optional name box, and
+  // "Welcome, N/A!" reads as a glitch on the customer's very first screen.
+  const guest = /^\s*(n\/?a|none|null|undefined|tbc|tba|-+|\.+|\?+)\s*$/i.test(singerName || '')
+    ? '' : singerName;
+  const hello = guest
+    ? T('wWelcomeName').replace('{name}', '<b style="color:#fbbf24">' + esc(guest) + '</b>')
     : '';
   const langBtns = LANG_OPTIONS.map(l =>
     '<button class="wv-lang' + (l === language ? ' active' : '') +
@@ -2900,6 +2816,102 @@ function WelcomeOverlay({ venueName, venueTagline, logoUrl, singerName, mins, la
   <button class="wv-primary" id="wv-next">${esc(T('wNext'))} →</button>
 </div>
 `;
+
+  // Wire up navigation whenever the markup is (re)injected.
+  //
+  // The deck is plain HTML set through dangerouslySetInnerHTML, with vanilla
+  // listeners attached here. Whenever that HTML string changes - a language
+  // pick, but also the singer name or session minutes arriving from the bar
+  // hub while the tour is already open - React throws the old nodes away and
+  // injects new ones, taking any listeners with them. This effect used to be
+  // keyed on [language] only, so a name or minutes change left the new
+  // Next/Back buttons with no listeners and the tour froze on slide 1 (filmed
+  // at the venue, 2026-09-10). Keyed on the markup itself it re-wires on
+  // every change, and slideRef returns the customer to their slide. A layout
+  // effect, so the fresh nodes never paint on slide 1 first.
+  React.useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const deck = root.querySelector('#wv-deck');
+    const dots = root.querySelector('#wv-dots');
+    const prev = root.querySelector('#wv-prev');
+    const next = root.querySelector('#wv-next');
+    const progress = root.querySelector('#wv-progress');
+    if (!deck || !dots || !prev || !next || !progress) return;
+    const slides = deck.querySelectorAll('.wv-slide');
+    const total = slides.length;
+    const SLIDE_W = 1280;  // booth container is a fixed 1280px wide
+    let i = 0;
+
+    dots.innerHTML = '';
+    const dotEls = [];
+    for (let k = 0; k < total; k++) {
+      const d = document.createElement('div');
+      d.className = 'wv-dot';
+      d.addEventListener('click', () => go(k));
+      dots.appendChild(d);
+      dotEls.push(d);
+    }
+    function go(n) {
+      i = Math.max(0, Math.min(total - 1, n));
+      slideRef.current = i;
+      deck.style.transform = 'translateX(' + (-i * SLIDE_W) + 'px)';
+      dotEls.forEach((d, k) => d.classList.toggle('active', k === i));
+      prev.disabled = i === 0;
+      next.textContent = i === total - 1 ? ('🎤 ' + T('wStart')) : (T('wNext') + ' →');
+      progress.textContent = String(i + 1).padStart(2, '0') + ' / ' + String(total).padStart(2, '0');
+    }
+    const start = () => onStartRef.current && onStartRef.current();
+    function goNext() { if (i >= total - 1) start(); else go(i + 1); }
+    const onPrev = () => go(i - 1);
+    prev.addEventListener('click', onPrev);
+    next.addEventListener('click', goNext);
+    const finalBtn = root.querySelector('#wv-finalStart');
+    if (finalBtn) finalBtn.addEventListener('click', start);
+
+    function onKey(e) {
+      if (e.key === 'ArrowRight') goNext();
+      else if (e.key === 'ArrowLeft') go(i - 1);
+    }
+    document.addEventListener('keydown', onKey);
+
+    // Swipe-to-advance for the touchscreen.
+    let sx = null, sy = null;
+    function ps(e) { sx = e.clientX; sy = e.clientY; }
+    function pe(e) {
+      if (sx == null) return;
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      sx = null;
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
+        if (dx < 0) goNext(); else go(i - 1);
+      }
+    }
+    deck.addEventListener('pointerdown', ps);
+    deck.addEventListener('pointerup', pe);
+
+    // Language picker (event-delegated so it works regardless of how many
+    // buttons there are). Toggles the active highlight in plain JS and pushes
+    // the choice up to App, which persists it and re-renders the chrome.
+    const langBar = root.querySelector('#wv-langs');
+    function onLangClick(e) {
+      const btn = e.target.closest('[data-lang]');
+      if (!btn || !langBar) return;
+      const lang = btn.getAttribute('data-lang');
+      langBar.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('active', b === btn));
+      if (onLanguageRef.current) onLanguageRef.current(lang);
+    }
+    if (langBar) langBar.addEventListener('click', onLangClick);
+
+    go(slideRef.current);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      prev.removeEventListener('click', onPrev);
+      next.removeEventListener('click', goNext);
+      deck.removeEventListener('pointerdown', ps);
+      deck.removeEventListener('pointerup', pe);
+      if (langBar) langBar.removeEventListener('click', onLangClick);
+    };
+  }, [HTML]);
 
   return (
     <div ref={rootRef} className="wv-stage"
