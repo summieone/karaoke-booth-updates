@@ -1,0 +1,3 @@
+# Store every file byte-for-byte: booths check each file against the sha256
+# in the manifest and reject any mismatch, so line endings must never change.
+* -text
