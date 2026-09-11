@@ -1,0 +1,30 @@
+{
+  "version": "SEP09-B",
+  "notes": "SEP09-B: category home page, logo Home button, search finds artist+title and typos, our songs offered first, failed searches no longer logged as found-nothing",
+  "files": {
+    "booth-v2.html": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/a1beef6ba1b4d382a862edd777b3996c8b73b472/booth-v2.html",
+      "sha256": "1915903c4a9233f4210bd3d6bf359963e918845469b4b7fb6753e0f10d59b173"
+    },
+    "venue-logo.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/a1beef6ba1b4d382a862edd777b3996c8b73b472/venue-logo.webp",
+      "sha256": "ad005bd2bd420a1c57da44d37be0947e05ebfacaad18cb8d12f3dedbe60455ad"
+    },
+    "player.js": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/a1beef6ba1b4d382a862edd777b3996c8b73b472/player.js",
+      "sha256": "d893b066cd16ea93a86ee329ca245817e70237b680f47abc6bb700ef2859729b"
+    },
+    "react.production.min.js": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/a1beef6ba1b4d382a862edd777b3996c8b73b472/react.production.min.js",
+      "sha256": "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd"
+    },
+    "react-dom.production.min.js": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/a1beef6ba1b4d382a862edd777b3996c8b73b472/react-dom.production.min.js",
+      "sha256": "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d"
+    },
+    "babel.min.js": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/a1beef6ba1b4d382a862edd777b3996c8b73b472/babel.min.js",
+      "sha256": "2623a9e22809915ce789b4461154e277ddce520d5a4320c14d44332a5d0dcea0"
+    }
+  }
+}
