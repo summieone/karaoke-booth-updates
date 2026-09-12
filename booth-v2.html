@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="buildtag">build SEP11-B pywebview</div>
+<div id="buildtag">build SEP12-A pywebview</div>
 <script>
   /* Self-calibrating fullscreen: report THIS window's title-bar height to the
      positioner script via the window title, so it can shift the window up by
@@ -3207,29 +3207,60 @@ function AdminPanel({ lib, timer, onClose, showCdg, onToggleShowCdg,
     if (on) localStorage.setItem('boothV2AutoUpdate', '1');
     else    localStorage.removeItem('boothV2AutoUpdate');
   }
-  const [updateUrl, setUpdateUrl] = React.useState('');
+  // The server's GET /api/config answers with the songs folder only - it never
+  // returns update_url - so without a local copy the box is blank after every
+  // reload even though the address is saved. Keep the last saved address in
+  // localStorage for display; a server that does return update_url wins.
+  const [updateUrl, setUpdateUrl] = React.useState(() => {
+    try { return localStorage.getItem('boothV2UpdateUrl') || ''; } catch (e) { return ''; }
+  });
+  const updateUrlEdited = React.useRef(false);   // typed into this session?
   const [updateStatus, setUpdateStatus] = React.useState({ checking: false, applying: false, info: null, error: null });
   React.useEffect(() => {
-    fetch('/api/config').then(r => r.json()).then(c => setUpdateUrl(c.update_url || '')).catch(() => {});
+    fetch('/api/config').then(r => r.json()).then(c => {
+      if (c && Object.prototype.hasOwnProperty.call(c, 'update_url')) setUpdateUrl(c.update_url || '');
+    }).catch(() => {});
   }, []);
+  // Normalise what was typed (see normalizeUpdateUrl), show the repaired value
+  // in the box, and surface the server's answer instead of swallowing it.
+  // Only saves if the box was edited this session: blurring an untouched
+  // (often blank - see above) box used to POST '' and clear the saved address.
   async function saveUpdateUrl(u) {
-    setUpdateUrl(u);
+    const url = normalizeUpdateUrl(u);
+    setUpdateUrl(url);
+    if (!updateUrlEdited.current) return true;
     try {
-      await fetch('/api/update-config', {
+      const r = await fetch('/api/update-config', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ update_url: u || '' })
+        body: JSON.stringify({ update_url: url })
       });
-    } catch (e) {}
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || data.ok === false) throw new Error(data.error || ('save failed (' + r.status + ')'));
+      try {
+        if (url) localStorage.setItem('boothV2UpdateUrl', url);
+        else localStorage.removeItem('boothV2UpdateUrl');
+      } catch (e) {}
+      updateUrlEdited.current = false;
+      return true;
+    } catch (e) {
+      setUpdateStatus({ checking: false, applying: false, info: null,
+        error: 'URL not saved: ' + String(e.message || e) });
+      return false;
+    }
   }
   async function checkForUpdates() {
     setUpdateStatus({ checking: true, applying: false, info: null, error: null });
+    // Save first and wait for it. Pressing Check straight after typing used to
+    // race the blur-save, so the first press reported "No update URL".
+    if (!(await saveUpdateUrl(updateUrl))) return;
     try {
       const r = await fetch('/api/update-check');
       const data = await r.json();
       if (!data.ok) throw new Error(data.error || 'check failed');
       setUpdateStatus({ checking: false, applying: false, info: data, error: null });
     } catch (e) {
-      setUpdateStatus({ checking: false, applying: false, info: null, error: String(e.message || e) });
+      setUpdateStatus({ checking: false, applying: false, info: null,
+        error: explainUpdateError(String(e.message || e)) });
     }
   }
   async function applyUpdates() {
@@ -3780,9 +3811,10 @@ function AdminPanel({ lib, timer, onClose, showCdg, onToggleShowCdg,
           </div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
             <input value={updateUrl}
-              onChange={e => setUpdateUrl(e.target.value)}
-              onBlur={() => saveUpdateUrl(updateUrl.trim())}
+              onChange={e => { updateUrlEdited.current = true; setUpdateUrl(e.target.value); }}
+              onBlur={() => saveUpdateUrl(updateUrl)}
               placeholder="https://…/manifest.json"
+              autoCapitalize="none" autoCorrect="off" spellCheck={false} inputMode="url"
               style={{ flex: 1, padding: '8px 10px', background: 'rgba(255,255,255,0.06)',
                 border: `1px solid ${border}`, borderRadius: 6, color: 'white',
                 fontFamily: 'ui-monospace, monospace', fontSize: 12, outline: 'none' }}/>
@@ -3802,6 +3834,11 @@ function AdminPanel({ lib, timer, onClose, showCdg, onToggleShowCdg,
               other booths should stay OFF and apply manually after verification.</span>
             </span>
           </label>
+          {!updateUrl && (
+            <div style={{ fontSize: 11, color: sub, marginBottom: 8 }}>
+              Blank after a restart? The address may still be saved on this booth — press <b>Check</b> before typing anything.
+            </div>
+          )}
           {updateStatus.error && (
             <div style={{ fontSize: 11, color: '#fca5a5', marginBottom: 8 }}>error: {updateStatus.error}</div>
           )}
@@ -4494,6 +4531,31 @@ function normSearch(s) {
 // Words that carry no signal in song/artist names. Dropped from the QUERY
 // only — the haystack keeps them, and substring matching does the rest, so
 // "killers" still finds "The Killers" and vice versa.
+// Update-URL hygiene for the admin panel. Staff type the manifest address on
+// the booth's touch keyboard, which auto-capitalises and drops characters, and
+// the server only accepts a URL that starts with exactly "https://" - so
+// "Https://…" and "https//…" both silently failed to save (venue, 2026-09-12).
+// Any casing, a missing colon or slashes, and stray spaces are repaired here;
+// the path is left alone because paths can be case-sensitive.
+function normalizeUpdateUrl(raw) {
+  let u = (raw || '').replace(/\s+/g, '');
+  if (!u) return '';
+  const m = u.match(/^(https?)?:?\/{0,2}(.*)$/i);
+  const scheme = (m[1] || '').toLowerCase();
+  let rest = m[2];
+  const isLocal = /^localhost(:|\/|$)/i.test(rest);
+  const proto = (scheme === 'http' && isLocal) ? 'http://' : 'https://';
+  const slash = rest.indexOf('/');
+  rest = slash === -1 ? rest.toLowerCase() : rest.slice(0, slash).toLowerCase() + rest.slice(slash);
+  return proto + rest;
+}
+// Turn the server's raw fetch error into something staff can act on.
+function explainUpdateError(msg) {
+  if (/\b404\b/.test(msg)) return msg + ' — the address is wrong somewhere: check the spelling of every part.';
+  if (/getaddrinfo|10060|11001|timed out/i.test(msg)) return msg + ' — this booth cannot reach the internet right now.';
+  if (/CERTIFICATE/i.test(msg)) return msg + ' — certificate problem on this booth; needs a server fix, not a retyped URL.';
+  return msg;
+}
 const _STOPWORDS = { the: 1, a: 1, an: 1 };
 
 function searchTokens(q) {
