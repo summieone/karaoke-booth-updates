@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="buildtag">build SEP12-A pywebview</div>
+<div id="buildtag">build SEP15-A pywebview</div>
 <script>
   /* Self-calibrating fullscreen: report THIS window's title-bar height to the
      positioner script via the window title, so it can shift the window up by
@@ -120,23 +120,25 @@ setTimeout(fitKiosk, 30);
 // reloads itself. Meant for the guinea-pig booth (studio); other booths
 // leave it OFF and staff press Check/Apply in Admin after staff-verify.
 // ============================================================
-(function autoUpdateOnBoot() {
-  if (localStorage.getItem('boothV2AutoUpdate') !== '1') return;
-  // One attempt per browser session — even if the server keeps reporting
-  // "update available" (e.g. a file that errors every time), we never enter
-  // an apply→reload→apply loop.
-  if (sessionStorage.getItem('bvAutoUpdateTried')) return;
-  setTimeout(() => {
-    fetch('/api/update-check').then(r => r.json()).then(chk => {
-      if (!chk || !chk.ok || !chk.updateAvailable) return;
-      sessionStorage.setItem('bvAutoUpdateTried', '1');
-      return fetch('/api/update-apply', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-      }).then(r => r.json()).then(res => {
-        if (res && res.downloaded && res.downloaded.length) location.reload();
-      });
-    }).catch(() => {});
-  }, 8000);
+(function migrateUpdateChannel() {
+  // One-time migration out of the typed-URL era. A booth already pointed at
+  // the staging manifest IS the studio, and must stay on that channel - if it
+  // fell through to the default it would quietly move itself onto the booths'
+  // channel the moment this build landed, and stop being the canary.
+  try {
+    if (localStorage.getItem('boothV2UpdateChannel')) return;
+    if (/manifest-staging/i.test(localStorage.getItem('boothV2UpdateUrl') || '')) {
+      localStorage.setItem('boothV2UpdateChannel', 'staging');
+    }
+  } catch (e) {}
+})();
+
+(function assertUpdateAddressOnBoot() {
+  // Tell the server this booth's baked-in manifest address, every boot. It
+  // costs one local request and means a booth can never be stranded by a
+  // lost, mistyped or half-rolled-back address. The checking and installing
+  // is driven from App (it needs to know whether anyone is singing).
+  setTimeout(() => { updAssertUrl('current').catch(() => {}); }, 2000);
 })();
 
 // ============================================================
@@ -1149,6 +1151,50 @@ function App() {
   const [flash, setFlash] = React.useState(null);
   const [addedToast, setAddedToast] = React.useState(null);  // { song, position } | null
   const [adminOpen, setAdminOpen] = React.useState(false);
+
+  // ── Software update scheduler ─────────────────────────────────────
+  // Look for a new build in the background and, on a booth set to install
+  // automatically, put it on while the room is empty. Never mid-song:
+  // applying rewrites booth-v2.html underneath us and reloads the page.
+  // No useSoftwareUpdate() here on purpose: App does not render any of this,
+  // and subscribing it would re-render the whole tree (grid included) on every
+  // update event for nothing. The card subscribes; App only drives.
+  const updBusyRef = React.useRef({ busy: true, lastTouch: Date.now() });
+  updBusyRef.current.busy = !!(nowPlaying || queue.length || timer.active || adminOpen);
+  React.useEffect(() => {
+    const touch = () => { updBusyRef.current.lastTouch = Date.now(); };
+    window.addEventListener('pointerdown', touch, true);
+    window.addEventListener('keydown', touch, true);
+    let t = null, stopped = false;
+    async function loop() {
+      if (stopped) return;
+      const r = await updCheck();
+      let next = r.lastError ? UPDATE_RETRY_MS : UPDATE_CHECK_MS;
+      if (r.available && updAuto() && updHeld().indexOf(r.available) === -1) {
+        const b = updBusyRef.current;
+        const idleFor = Date.now() - b.lastTouch;
+        if (b.busy) {
+          _updSet({ waitingBecause: 'the booth is in use' });
+        } else if (idleFor < UPDATE_IDLE_MS) {
+          _updSet({ waitingBecause: 'someone was using the booth a moment ago' });
+          next = Math.min(next, UPDATE_IDLE_MS - idleFor + 5000);
+        } else {
+          _updSet({ waitingBecause: null });
+          if (await updInstall()) return;      // reloads the page
+        }
+      } else {
+        _updSet({ waitingBecause: null });
+      }
+      t = setTimeout(loop, next);
+    }
+    t = setTimeout(loop, 60000);   // let the library finish loading first
+    return () => {
+      stopped = true;
+      clearTimeout(t);
+      window.removeEventListener('pointerdown', touch, true);
+      window.removeEventListener('keydown', touch, true);
+    };
+  }, []);
 
   // Visible diagnostics so we can spot wiring issues without DevTools.
   // Shown in the top bar.  status: 'init' | 'ready' | 'no-elements' | 'no-player-js'
@@ -3197,89 +3243,6 @@ function AdminPanel({ lib, timer, onClose, showCdg, onToggleShowCdg,
     else   localStorage.removeItem('karaokeYtApiKey');
   }
 
-  // ── Self-update.  Reads/writes update_url to server config (.karaoke-config.json)
-  // so the setting survives across .exe rebuilds.
-  // autoUpdate: per-booth localStorage flag read by autoUpdateOnBoot() —
-  // ON only at the staff-verify booth (studio); everywhere else staff apply.
-  const [autoUpdate, setAutoUpdate] = React.useState(() => localStorage.getItem('boothV2AutoUpdate') === '1');
-  function saveAutoUpdate(on) {
-    setAutoUpdate(on);
-    if (on) localStorage.setItem('boothV2AutoUpdate', '1');
-    else    localStorage.removeItem('boothV2AutoUpdate');
-  }
-  // The server's GET /api/config answers with the songs folder only - it never
-  // returns update_url - so without a local copy the box is blank after every
-  // reload even though the address is saved. Keep the last saved address in
-  // localStorage for display; a server that does return update_url wins.
-  const [updateUrl, setUpdateUrl] = React.useState(() => {
-    try { return localStorage.getItem('boothV2UpdateUrl') || ''; } catch (e) { return ''; }
-  });
-  const updateUrlEdited = React.useRef(false);   // typed into this session?
-  const [updateStatus, setUpdateStatus] = React.useState({ checking: false, applying: false, info: null, error: null });
-  React.useEffect(() => {
-    fetch('/api/config').then(r => r.json()).then(c => {
-      if (c && Object.prototype.hasOwnProperty.call(c, 'update_url')) setUpdateUrl(c.update_url || '');
-    }).catch(() => {});
-  }, []);
-  // Normalise what was typed (see normalizeUpdateUrl), show the repaired value
-  // in the box, and surface the server's answer instead of swallowing it.
-  // Only saves if the box was edited this session: blurring an untouched
-  // (often blank - see above) box used to POST '' and clear the saved address.
-  async function saveUpdateUrl(u) {
-    const url = normalizeUpdateUrl(u);
-    setUpdateUrl(url);
-    if (!updateUrlEdited.current) return true;
-    try {
-      const r = await fetch('/api/update-config', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ update_url: url })
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok || data.ok === false) throw new Error(data.error || ('save failed (' + r.status + ')'));
-      try {
-        if (url) localStorage.setItem('boothV2UpdateUrl', url);
-        else localStorage.removeItem('boothV2UpdateUrl');
-      } catch (e) {}
-      updateUrlEdited.current = false;
-      return true;
-    } catch (e) {
-      setUpdateStatus({ checking: false, applying: false, info: null,
-        error: 'URL not saved: ' + String(e.message || e) });
-      return false;
-    }
-  }
-  async function checkForUpdates() {
-    setUpdateStatus({ checking: true, applying: false, info: null, error: null });
-    // Save first and wait for it. Pressing Check straight after typing used to
-    // race the blur-save, so the first press reported "No update URL".
-    if (!(await saveUpdateUrl(updateUrl))) return;
-    try {
-      const r = await fetch('/api/update-check');
-      const data = await r.json();
-      if (!data.ok) throw new Error(data.error || 'check failed');
-      setUpdateStatus({ checking: false, applying: false, info: data, error: null });
-    } catch (e) {
-      setUpdateStatus({ checking: false, applying: false, info: null,
-        error: explainUpdateError(String(e.message || e)) });
-    }
-  }
-  async function applyUpdates() {
-    if (!updateStatus.info) return;
-    setUpdateStatus(s => ({ ...s, applying: true, error: null }));
-    try {
-      const r = await fetch('/api/update-apply', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-      });
-      const data = await r.json();
-      if (!data.ok && (!data.errors || !data.downloaded)) throw new Error(data.error || 'update failed');
-      setUpdateStatus({ checking: false, applying: false,
-        info: { ...updateStatus.info, downloaded: data.downloaded, errors: data.errors, justApplied: true },
-        error: null });
-    } catch (e) {
-      setUpdateStatus(s => ({ ...s, applying: false, error: String(e.message || e) }));
-    }
-  }
-
   function addMinutes(delta) {
     // Directly bump localStorage so the classic booth picks it up (same keys)
     if (!timer.active) {
@@ -3622,6 +3585,7 @@ function AdminPanel({ lib, timer, onClose, showCdg, onToggleShowCdg,
         </>}
 
         {adminTab === 'setup' && <>
+        <SoftwareUpdateCard/>
         {/* CDG / audio-only toggle — same localStorage key as classic, so the
             two booths stay in sync.  Off = hide CDG+MP3 and standalone audio
             tracks from the song lists. */}
@@ -3802,90 +3766,6 @@ function AdminPanel({ lib, timer, onClose, showCdg, onToggleShowCdg,
             controls, then downloads the listed HTML / JS / CSS / asset
             files into the booth folder.  Python source still requires
             a manual rebuild + USB. */}
-        <Section title="🔄 Auto-update (HTML / JS only)">
-          <div style={{ fontSize: 12, color: sub, marginBottom: 8 }}>
-            Point this at a URL serving a JSON manifest like
-            <code style={{ color: '#fbbf24' }}> {'{"version":"…","files":{"booth-v2.html":"https://…"}}'}</code>.
-            Click <b>Check</b> to see what's available, then <b>Apply</b> to download.
-            <span style={{ color: '#fca5a5' }}> Python source is intentionally blocked — that still needs a rebuild + USB.</span>
-          </div>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-            <input value={updateUrl}
-              onChange={e => { updateUrlEdited.current = true; setUpdateUrl(e.target.value); }}
-              onBlur={() => saveUpdateUrl(updateUrl)}
-              placeholder="https://…/manifest.json"
-              autoCapitalize="none" autoCorrect="off" spellCheck={false} inputMode="url"
-              style={{ flex: 1, padding: '8px 10px', background: 'rgba(255,255,255,0.06)',
-                border: `1px solid ${border}`, borderRadius: 6, color: 'white',
-                fontFamily: 'ui-monospace, monospace', fontSize: 12, outline: 'none' }}/>
-            <AdminBtn onClick={checkForUpdates} kind={updateStatus.checking ? 'default' : 'primary'}>
-              {updateStatus.checking ? '⏳ Checking…' : 'Check'}
-            </AdminBtn>
-          </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
-            fontSize: 12, cursor: 'pointer', userSelect: 'none' }}>
-            <input type="checkbox" checked={autoUpdate}
-              onChange={e => saveAutoUpdate(e.target.checked)}
-              style={{ width: 16, height: 16, accentColor: '#fbbf24' }}/>
-            <span>
-              <b>Auto-apply on boot</b>
-              <span style={{ color: sub }}> — this booth updates + reloads itself when the
-              manifest changes. Turn ON only at the staff-verify booth (studio);
-              other booths should stay OFF and apply manually after verification.</span>
-            </span>
-          </label>
-          {!updateUrl && (
-            <div style={{ fontSize: 11, color: sub, marginBottom: 8 }}>
-              Blank after a restart? The address may still be saved on this booth — press <b>Check</b> before typing anything.
-            </div>
-          )}
-          {updateStatus.error && (
-            <div style={{ fontSize: 11, color: '#fca5a5', marginBottom: 8 }}>error: {updateStatus.error}</div>
-          )}
-          {updateStatus.info && (() => {
-            const info = updateStatus.info;
-            const fileEntries = Object.entries(info.files || {});
-            const needList = fileEntries.filter(([_, f]) => f.needsUpdate);
-            return (
-              <div style={{ padding: 10, borderRadius: 8,
-                background: 'rgba(255,255,255,0.03)', border: `1px solid ${border}` }}>
-                <div style={{ fontSize: 12, marginBottom: 6 }}>
-                  Manifest version: <b style={{ color: '#fbbf24' }}>{info.version || '(none)'}</b>
-                  {' · '}Applied: <span style={{ color: sub }}>{info.appliedVersion || '—'}</span>
-                </div>
-                {info.notes && <div style={{ fontSize: 11, color: sub, fontStyle: 'italic',
-                  marginBottom: 6 }}>📝 {info.notes}</div>}
-                {info.justApplied
-                  ? (
-                    <div style={{ fontSize: 11, color: '#86efac', marginBottom: 6 }}>
-                      ✓ Applied {(info.downloaded || []).length} file{(info.downloaded || []).length === 1 ? '' : 's'}.
-                      Reload the page (Ctrl+F5) to see changes.
-                      {info.errors && info.errors.length > 0 && (
-                        <div style={{ color: '#fca5a5', marginTop: 4 }}>
-                          {info.errors.length} error{info.errors.length === 1 ? '' : 's'}:
-                          {info.errors.map(e => ` ${e.file} (${e.error})`).join(';')}
-                        </div>
-                      )}
-                    </div>
-                  )
-                  : info.updateAvailable
-                    ? (
-                      <div style={{ fontSize: 11, color: '#fcd34d', marginBottom: 6 }}>
-                        {needList.length} file{needList.length === 1 ? '' : 's'} need updating:
-                        <br/>{needList.map(([n]) => n).join(', ')}
-                      </div>
-                    )
-                    : <div style={{ fontSize: 11, color: '#86efac', marginBottom: 6 }}>✓ Up to date</div>
-                }
-                {info.updateAvailable && !info.justApplied && (
-                  <AdminBtn kind="primary" onClick={applyUpdates}>
-                    {updateStatus.applying ? '⏳ Downloading…' : `⬇️ Apply update`}
-                  </AdminBtn>
-                )}
-              </div>
-            );
-          })()}
-        </Section>
 
         {/* Admin PIN — change the 4-digit code that gates this panel. */}
         <Section title="Admin PIN">
@@ -4225,6 +4105,170 @@ function AnalyticsReportView() {
     </>
   );
 }
+// Software update card — the whole update UI. Deliberately the first thing
+// in Setup: staff open admin, and either it says "Up to date" or there is
+// one lit button to press. See the engine at the top of this file.
+function SoftwareUpdateCard() {
+  const upd = useSoftwareUpdate();
+  const sub = '#a1a1aa'; const border = 'rgba(255,255,255,0.1)';
+  const [showAdvanced, setShowAdvanced] = React.useState(false);
+  const running = updBuildTag();
+  const channel = updChannel();
+  const held = updHeld();
+  const isHeld = !!upd.available && held.indexOf(upd.available) !== -1;
+  const busy = upd.phase === 'installing';
+  const mins = upd.lastCheck ? Math.floor((Date.now() - upd.lastCheck) / 60000) : null;
+  const checkedLabel = mins === null ? 'not checked yet'
+    : mins <= 0 ? 'checked just now'
+    : mins === 1 ? 'checked 1 minute ago'
+    : mins < 60 ? 'checked ' + mins + ' minutes ago'
+    : 'checked over an hour ago';
+
+  const box = (bg, edge, children) => (
+    <div style={{ padding: 12, borderRadius: 10, background: bg,
+      border: '1px solid ' + edge, marginBottom: 10 }}>{children}</div>
+  );
+
+  return (
+    <Section title="🔄 Software update">
+      {busy && box('rgba(99,102,241,0.12)', '#6366f1', (
+        <div style={{ fontSize: 13, fontWeight: 800, color: '#a5b4fc' }}>
+          ⏳ Installing… leave the booth alone, it restarts by itself.
+        </div>
+      ))}
+
+      {!busy && upd.phase === 'done' && box('rgba(34,197,94,0.12)', '#22c55e', (
+        <div style={{ fontSize: 13, fontWeight: 800, color: '#86efac' }}>
+          ✓ Done — restarting…
+        </div>
+      ))}
+
+      {!busy && upd.phase !== 'done' && upd.available && !isHeld && box(
+        'rgba(251,191,36,0.12)', '#fbbf24', (
+        <>
+          <div style={{ fontSize: 14, fontWeight: 900, color: '#fcd34d', marginBottom: 4 }}>
+            ⬇ Update available — {upd.available}
+          </div>
+          {upd.notes && (
+            <div style={{ fontSize: 12, color: '#e4e4e7', marginBottom: 10, lineHeight: 1.45 }}>
+              {upd.notes}
+            </div>
+          )}
+          <button onClick={updInstall} style={{
+            width: '100%', padding: '14px 0', borderRadius: 10, border: 'none',
+            background: '#fbbf24', color: '#1c1917', fontWeight: 900, fontSize: 15,
+            cursor: 'pointer',
+          }}>⬇  Install now</button>
+          <div style={{ fontSize: 11, color: sub, marginTop: 8 }}>
+            {upd.fileCount} file{upd.fileCount === 1 ? '' : 's'} · takes a few seconds ·
+            the booth restarts on its own.
+          </div>
+          {upd.waitingBecause && (
+            <div style={{ fontSize: 11, color: '#fcd34d', marginTop: 6 }}>
+              Waiting because {upd.waitingBecause} — it will install by itself when the
+              booth is free. Pressing the button now is fine too.
+            </div>
+          )}
+        </>
+      ))}
+
+      {/* Only claim "up to date" once we have actually asked. Before the
+          first check the honest answer is that we are still looking. */}
+      {!busy && upd.phase !== 'done' && !upd.available && !upd.lastError && box(
+        'rgba(255,255,255,0.03)', border, (
+        upd.lastCheck
+          ? <div style={{ fontSize: 13, fontWeight: 800, color: '#86efac' }}>✓ Up to date</div>
+          : <div style={{ fontSize: 13, fontWeight: 800, color: sub }}>Looking for updates…</div>
+      ))}
+
+      {!busy && isHeld && box('rgba(255,255,255,0.03)', border, (
+        <>
+          <div style={{ fontSize: 12, color: '#fcd34d', marginBottom: 8 }}>
+            {upd.available} is held back on this booth — it was rolled back here.
+          </div>
+          <AdminBtn onClick={() => { updHold(upd.available, false); }}>
+            Allow {upd.available} again
+          </AdminBtn>
+        </>
+      ))}
+
+      {!busy && upd.lastError && (
+        <div style={{ fontSize: 11, color: '#fca5a5', marginBottom: 10 }}>
+          {upd.lastError}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <AdminBtn onClick={updCheck} kind={upd.phase === 'checking' ? 'default' : 'primary'}>
+          {upd.phase === 'checking' ? '⏳ Checking…' : 'Check now'}
+        </AdminBtn>
+        <div style={{ fontSize: 11, color: sub }}>
+          This booth is running <b style={{ color: '#e4e4e7' }}>{running || 'an unknown build'}</b>
+          {' · '}{checkedLabel}
+        </div>
+      </div>
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12,
+        fontSize: 12, cursor: 'pointer', userSelect: 'none' }}>
+        <input type="checkbox" checked={updAuto()}
+          onChange={e => updSetAuto(e.target.checked)}
+          style={{ width: 16, height: 16, accentColor: '#fbbf24' }}/>
+        <span>
+          <b>Install updates by itself</b>
+          <span style={{ color: sub }}> — only while the booth is idle: no song
+          playing, no queue, no session running, and nobody has touched the
+          screen for a few minutes.</span>
+        </span>
+      </label>
+
+      <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid ' + border }}>
+        <button onClick={() => setShowAdvanced(v => !v)} style={{
+          background: 'none', border: 'none', color: sub, fontSize: 11,
+          cursor: 'pointer', padding: 0, textDecoration: 'underline',
+        }}>{showAdvanced ? 'Hide' : 'Something wrong after an update?'}</button>
+        {showAdvanced && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 11, color: sub, marginBottom: 8 }}>
+              Roll back puts the previous release on and keeps this booth on it.
+              The build you leave is held back here until you allow it again.
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <AdminBtn kind="danger" onClick={updRollback}>
+                {upd.rollbackTo ? '↩ Roll back to ' + upd.rollbackTo : '↩ Roll back'}
+              </AdminBtn>
+              {!upd.rollbackTo && (
+                <span style={{ fontSize: 11, color: sub }}>
+                  No earlier release published yet.
+                </span>
+              )}
+            </div>
+            <div style={{ marginTop: 12, fontSize: 11, color: sub }}>
+              Update channel — <b style={{ color: '#e4e4e7' }}>{UPDATE_CHANNELS[channel].label}</b>,
+              {' '}{UPDATE_CHANNELS[channel].hint}.
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+              {Object.keys(UPDATE_CHANNELS).map(k => (
+                <button key={k} onClick={() => { updSetChannel(k); updCheck(); }} style={{
+                  padding: '7px 12px', borderRadius: 8, cursor: 'pointer',
+                  background: channel === k ? 'rgba(99,102,241,0.35)' : 'rgba(255,255,255,0.04)',
+                  border: '1px solid ' + (channel === k ? '#6366f1' : border),
+                  color: channel === k ? '#a5b4fc' : '#e4e4e7',
+                  fontWeight: 700, fontSize: 12,
+                }}>{UPDATE_CHANNELS[k].label}</button>
+              ))}
+            </div>
+            {held.length > 0 && (
+              <div style={{ fontSize: 11, color: sub, marginTop: 10 }}>
+                Held back on this booth: {held.join(', ')}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
 function AdminBtn({ children, onClick, kind }) {
   const styles = {
     primary: { bg: '#fbbf24', color: '#111', border: '#fbbf24' },
@@ -4531,24 +4575,188 @@ function normSearch(s) {
 // Words that carry no signal in song/artist names. Dropped from the QUERY
 // only — the haystack keeps them, and substring matching does the rest, so
 // "killers" still finds "The Killers" and vice versa.
-// Update-URL hygiene for the admin panel. Staff type the manifest address on
-// the booth's touch keyboard, which auto-capitalises and drops characters, and
-// the server only accepts a URL that starts with exactly "https://" - so
-// "Https://…" and "https//…" both silently failed to save (venue, 2026-09-12).
-// Any casing, a missing colon or slashes, and stray spaces are repaired here;
-// the path is left alone because paths can be case-sensitive.
-function normalizeUpdateUrl(raw) {
-  let u = (raw || '').replace(/\s+/g, '');
-  if (!u) return '';
-  const m = u.match(/^(https?)?:?\/{0,2}(.*)$/i);
-  const scheme = (m[1] || '').toLowerCase();
-  let rest = m[2];
-  const isLocal = /^localhost(:|\/|$)/i.test(rest);
-  const proto = (scheme === 'http' && isLocal) ? 'http://' : 'https://';
-  const slash = rest.indexOf('/');
-  rest = slash === -1 ? rest.toLowerCase() : rest.slice(0, slash).toLowerCase() + rest.slice(slash);
-  return proto + rest;
+// ============================================================
+// SOFTWARE UPDATE
+// ------------------------------------------------------------
+// The booth looks after its own updates. The manifest addresses are baked
+// in below, so nobody ever types a URL again: staff press one button, or
+// leave it alone and it installs itself while the room is empty.
+//
+// Why baked in: the address had to be typed on the booth's touch keyboard,
+// which capitalises and drops characters, and the server only accepts a URL
+// starting with exactly "https://". Staff at the venue lost four attempts to
+// that on 2026-09-12, and a blank box saved on blur wiped the saved address
+// entirely. A constant cannot be mistyped, and re-asserting it on every boot
+// self-heals a booth whose saved address was lost or left pointing at the
+// rollback manifest.
+//
+// This all runs page-side against the server's existing
+// /api/update-check | /api/update-apply | /api/update-config, so the whole
+// feature travels by ordinary auto-update - it does NOT need a
+// karaoke_server.py rebuild and a USB stick.
+// ============================================================
+const UPDATE_REPO = 'https://raw.githubusercontent.com/summieone/karaoke-booth-updates/main/';
+const UPDATE_CHANNELS = {
+  stable:  { label: 'Booths',
+             hint: 'gets a build once it has run at the studio' },
+  staging: { label: 'Studio (test booth)',
+             hint: 'gets new builds first, before the other booths' },
+};
+const UPDATE_IDLE_MS  = 3 * 60 * 1000;    // quiet this long = nobody in the room
+const UPDATE_CHECK_MS = 30 * 60 * 1000;   // how often to look
+const UPDATE_RETRY_MS = 5 * 60 * 1000;    // ...after a failed look
+
+function updChannel() {
+  try {
+    const c = localStorage.getItem('boothV2UpdateChannel');
+    return UPDATE_CHANNELS[c] ? c : 'stable';
+  } catch (e) { return 'stable'; }
 }
+function updSetChannel(c) {
+  try {
+    if (UPDATE_CHANNELS[c]) localStorage.setItem('boothV2UpdateChannel', c);
+  } catch (e) {}
+}
+// kind: 'current' | 'rollback'
+function updUrl(kind) {
+  const base = 'manifest-' + (updChannel() === 'staging' ? 'staging' : 'stable');
+  return UPDATE_REPO + base + (kind === 'rollback' ? '-rollback' : '') + '.json';
+}
+// Auto-install is ON unless this booth has been opted out.
+function updAuto() {
+  try { return localStorage.getItem('boothV2AutoUpdate') !== '0'; } catch (e) { return true; }
+}
+function updSetAuto(on) {
+  try {
+    if (on) localStorage.removeItem('boothV2AutoUpdate');
+    else localStorage.setItem('boothV2AutoUpdate', '0');
+  } catch (e) {}
+  _updSet({});
+}
+// Versions this booth has rolled back FROM. Without this the next check
+// would offer the rejected build again and auto-install would put it
+// straight back on.
+function updHeld() {
+  try { return JSON.parse(localStorage.getItem('boothV2HeldVersions') || '[]'); } catch (e) { return []; }
+}
+function updHold(v, on) {
+  if (!v) return;
+  const set = updHeld().filter(x => x !== v);
+  if (on) set.push(v);
+  try { localStorage.setItem('boothV2HeldVersions', JSON.stringify(set)); } catch (e) {}
+  _updSet({});
+}
+// What this booth is actually running, from the tag staff can see bottom-left.
+function updBuildTag() {
+  const el = document.getElementById('buildtag');
+  const m = el && /build\s+(\S+)/.exec(el.textContent || '');
+  return m ? m[1] : null;
+}
+
+const _upd = {
+  phase: 'idle',        // idle | checking | installing | done | error
+  installed: null,      // what the server last applied - a backstop for the
+                        // build tag when naming the version we are leaving
+  available: null,      // version the manifest is offering, or null
+  notes: '',
+  fileCount: 0,
+  rollbackTo: null,     // version the rollback manifest would put back
+  lastCheck: 0,
+  lastError: null,
+  waitingBecause: null, // why an automatic install is holding off
+  listeners: new Set(),
+};
+function _updSet(patch) {
+  Object.assign(_upd, patch);
+  _upd.listeners.forEach(fn => { try { fn(); } catch (e) {} });
+}
+function useSoftwareUpdate() {
+  const [, bump] = React.useReducer(x => x + 1, 0);
+  React.useEffect(() => {
+    _upd.listeners.add(bump);
+    return () => { _upd.listeners.delete(bump); };
+  }, []);
+  return _upd;
+}
+
+// Point the server at this booth's baked-in address. Also repairs a booth
+// left pointing at the rollback manifest by a reload mid-rollback.
+async function updAssertUrl(kind) {
+  const url = updUrl(kind);
+  const r = await fetch('/api/update-config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ update_url: url }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.ok === false) throw new Error(d.error || ('could not set the update address (' + r.status + ')'));
+  return url;
+}
+
+async function updCheck() {
+  if (_upd.phase === 'installing') return _upd;
+  _updSet({ phase: 'checking', lastError: null });
+  // What an earlier release would put back, so the card can name it. Fetched
+  // straight from the repo (raw.githubusercontent.com allows cross-origin);
+  // a booth with no earlier release simply gets no rollback offer.
+  fetch(updUrl('rollback'), { cache: 'no-store' })
+    .then(r => (r.ok ? r.json() : null))
+    .then(m => _updSet({ rollbackTo: (m && m.version) || null }))
+    .catch(() => _updSet({ rollbackTo: null }));
+  try {
+    await updAssertUrl('current');
+    const r = await fetch('/api/update-check');
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'check failed');
+    const need = Object.values(d.files || {}).filter(f => f.needsUpdate).length;
+    _updSet({
+      phase: 'idle', lastCheck: Date.now(), lastError: null,
+      installed: d.appliedVersion || _upd.installed,
+      available: d.updateAvailable ? (d.version || null) : null,
+      notes: d.notes || '', fileCount: need,
+    });
+  } catch (e) {
+    _updSet({ phase: 'error', lastCheck: Date.now(),
+      lastError: explainUpdateError(String((e && e.message) || e)) });
+  }
+  return _upd;
+}
+
+// Shared by install and roll back: point at a manifest, download it, reload.
+async function _updApply(kind) {
+  if (_upd.phase === 'installing') return false;
+  // Which build we are leaving, so a roll back can hold it. The visible tag
+  // is the truth of what is loaded; appliedVersion is the backstop, because
+  // holding nothing would let the rejected build straight back on.
+  const leaving = updBuildTag() || _upd.installed;
+  _updSet({ phase: 'installing', lastError: null });
+  try {
+    await updAssertUrl(kind);
+    const r = await fetch('/api/update-apply', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    const d = await r.json().catch(() => ({}));
+    const got = (d && d.downloaded) || [];
+    const errs = (d && d.errors) || [];
+    if (!got.length) {
+      throw new Error(errs.length ? errs.map(e => e.file + ': ' + e.error).join('; ')
+                                  : ((d && d.error) || 'nothing was downloaded'));
+    }
+    if (kind === 'rollback') updHold(leaving, true);
+    _updSet({ phase: 'done', available: null, notes: '' });
+    setTimeout(() => location.reload(), 1600);
+    return true;
+  } catch (e) {
+    _updSet({ phase: 'error', lastError: explainUpdateError(String((e && e.message) || e)) });
+    return false;
+  } finally {
+    // Never leave the booth pointed at the rollback manifest: if the page
+    // died here, the next boot would "update" back to the old build.
+    if (kind === 'rollback') { try { await updAssertUrl('current'); } catch (e) {} }
+  }
+}
+function updInstall()  { return _updApply('current'); }
+function updRollback() { return _updApply('rollback'); }
+
 // Turn the server's raw fetch error into something staff can act on.
 function explainUpdateError(msg) {
   if (/\b404\b/.test(msg)) return msg + ' — the address is wrong somewhere: check the spelling of every part.';
