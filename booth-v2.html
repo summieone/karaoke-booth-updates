@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="buildtag">build SEP15-A pywebview</div>
+<div id="buildtag">build NOV20-A pywebview</div>
 <script>
   /* Self-calibrating fullscreen: report THIS window's title-bar height to the
      positioner script via the window title, so it can shift the window up by
@@ -519,6 +519,24 @@ async function loadYtLibrary(categories) {
     }
   });
 
+  // 2b. NOV20-A: a playlist that matched no category used to be dropped here.
+  // It showed only as a diagnostic line in admin, which is why adding
+  // "Christmas" to yt playlists.txt changed nothing on the booth - there was
+  // no Christmas category for it to attach to. Each one now becomes a
+  // category in its own right, so a new streaming playlist appears as a tile
+  // with nobody editing the booth's category list. These names are kept OUT
+  // of lib.categories (returned separately as extraCats) so the admin
+  // category editor still saves only the booth's real list.
+  const extraCats = [];
+  unmatched.forEach(u => {
+    if (matchedByCat[u.playlistName]) return;
+    matchedByCat[u.playlistName] = {
+      playlistId: u.playlistId, playlistName: u.playlistName,
+      score: 0, fromPlaylist: true,
+    };
+    extraCats.push(u.playlistName);
+  });
+
   // 3. Merge any admin-entered overrides (classic booth writes these)
   try {
     const overrides = JSON.parse(localStorage.getItem('karaokeYtPlaylistOverrides') || '{}');
@@ -550,7 +568,7 @@ async function loadYtLibrary(categories) {
     }
   });
 
-  return { matchedByCat, itemsByCat, rawPlaylists: playlists, unmatched };
+  return { matchedByCat, itemsByCat, rawPlaylists: playlists, unmatched, extraCats };
 }
 
 // Once-per-boot guard for the streaming auto-refresh in useLibrary below.
@@ -722,6 +740,7 @@ const CATEGORY_STYLE = {
   '2010s Bangers':            { emoji: '🔊', hue: 200 },
   'Singalong Classics':       { emoji: '🎶', hue: 240 },
   'Feelgood Hits':            { emoji: '☀️', hue: 50  },
+  'Christmas':                { emoji: '🎄', hue: 355 },
 };
 function styleForCat(name) {
   if (CATEGORY_STYLE[name]) return CATEGORY_STYLE[name];
@@ -3577,8 +3596,9 @@ function AdminPanel({ lib, timer, onClose, showCdg, onToggleShowCdg,
           )}
           {unmatched.length > 0 && (
             <div style={{ marginTop: 10, fontSize: 11, color: sub }}>
-              {unmatched.length} unmatched playlist{unmatched.length === 1 ? '' : 's'}:
-              {' '}{unmatched.slice(0, 4).map(u => u.playlistName).join(', ')}{unmatched.length > 4 ? '…' : ''}
+              {unmatched.length} playlist{unmatched.length === 1 ? '' : 's'} matching no category
+              {' '}({unmatched.slice(0, 4).map(u => u.playlistName).join(', ')}{unmatched.length > 4 ? '…' : ''})
+              {' '}- each gets a tile of its own on the home page.
             </div>
           )}
         </Section>
@@ -4876,7 +4896,14 @@ function rankSongs(songs, query) {
 
 function BrowseMode({ lib, addToQueue, flash, homeSignal }) {
   const t = useTr();
-  const cats = lib.categories || [];
+  // NOV20-A: the booth's own categories, plus one for every streaming
+  // playlist that matches none of them. Deliberately NOT merged into
+  // lib.categories, so the admin category editor keeps saving only the
+  // real list and a playlist removed later leaves no dead category behind.
+  const cats = React.useMemo(
+    () => (lib.categories || []).concat((lib.yt && lib.yt.extraCats) || []),
+    [lib.categories, lib.yt]
+  );
   // ── Home page ──────────────────────────────────────────────
   // v2 used to open straight into the first category's song grid.  v1 opened
   // on a page of big category tiles, which reads far better on a cold booth
