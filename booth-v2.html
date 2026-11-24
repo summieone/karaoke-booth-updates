@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="buildtag">build NOV20-A pywebview</div>
+<div id="buildtag">build NOV24-A pywebview</div>
 <script>
   /* Self-calibrating fullscreen: report THIS window's title-bar height to the
      positioner script via the window title, so it can shift the window up by
@@ -5003,6 +5003,32 @@ function BrowseMode({ lib, addToQueue, flash, homeSignal }) {
   // Song count per category — shown on the home tiles so the customer can
   // see at a glance which shelves are full.  Local songs plus whatever the
   // matched YouTube playlist has cached for that category.
+  // NOV24-A: the home grid's rows were coming out SHORTER than the tiles.
+  // Columns measured 139px, so an aspectRatio:1 tile needs 139px of row, but
+  // the grid sized the first three rows at 114px and the tiles spilled over,
+  // painting across the row above - which sliced the song count off every row
+  // except the last. Giving the rows a definite height fixes it: measure the
+  // grid once and whenever it resizes, and set gridAutoRows to the same number
+  // the column works out at. ResizeObserver is event-driven, so this adds no
+  // per-second work (see AUG20-A).
+  const homeGridEl = React.useRef(null);
+  const [tilePx, setTilePx] = React.useState(0);
+  React.useEffect(() => {
+    const el = homeGridEl.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const GAP = 12, COLS = 6;
+    const measure = () => {
+      const w = el.clientWidth;
+      if (!w) return;
+      const t = Math.floor((w - GAP * (COLS - 1)) / COLS);
+      setTilePx(prev => (Math.abs(prev - t) > 1 ? t : prev));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const catCounts = React.useMemo(() => {
     const m = {};
     for (const c of cats) m[c] = 0;
@@ -5312,10 +5338,25 @@ function BrowseMode({ lib, addToQueue, flash, homeSignal }) {
             textTransform: 'uppercase' }}>
             {t('choosevibe')}
           </div>
-          <div key="browse-home" ref={setHomeScrollRef}
+          <div key="browse-home"
+            ref={el => { setHomeScrollRef(el); homeGridEl.current = el; }}
             style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4,
               display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12,
               alignContent: 'start',
+              // NOV24-A: without this the tiles stretch to the grid row instead
+              // of sizing themselves, so aspectRatio:1 made each tile TALLER
+              // than its row and every row painted over the bottom of the one
+              // above - which is why the song counts were sliced off on every
+              // row except the last. 'start' lets each tile size itself and the
+              // row then fits it. Present since at least SEP11-B.
+              alignItems: 'start',
+              gridAutoRows: tilePx ? tilePx + 'px' : undefined,
+              // Reserve the scrollbar's width whether or not it is showing.
+              // Without this, the bar appearing narrows the element we measure,
+              // which shrinks the tiles, which can remove the need to scroll,
+              // which widens it again - a flicker loop on any screen where the
+              // tiles only just overflow.
+              scrollbarGutter: 'stable',
               touchAction: 'pan-y',
               WebkitOverflowScrolling: 'touch',
               overscrollBehavior: 'contain',
