@@ -1,34 +1,38 @@
 {
-  "version": "NOV24-C",
-  "notes": "NOV24-C: removes the light grey boxes around the venue name and the Browse/Swipe/Radio tabs. Also carries NOV24-B (booths now report which build they are running, so versions can be checked from home) and NOV24-A (fixes the squashed category tiles).",
+  "version": "NOV24-D",
+  "notes": "NOV24-D: Christmas now has proper artwork, and booths pick up an update without being restarted - if the files on disk are a newer build than the page running, the booth reloads itself while the room is empty. Category artwork can now ship with a release; anything in the songs folder still wins over it.",
   "files": {
     "booth-v2.html": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/a2bec9d0ad34b98fd44b2a6f7d52478b31bbdaf1/booth-v2.html",
-      "sha256": "455e45ee20002f6c33b5391551a5b9468f41c4d7bd87123aeb5de26b979a49fd"
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/booth-v2.html",
+      "sha256": "74f5725f6b94e01a2cd7db4babcafc853be9227294cc37da1d4f722901c268e0"
     },
     "venue-logo.webp": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/a2bec9d0ad34b98fd44b2a6f7d52478b31bbdaf1/venue-logo.webp",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/venue-logo.webp",
       "sha256": "ad005bd2bd420a1c57da44d37be0947e05ebfacaad18cb8d12f3dedbe60455ad"
     },
     "player.js": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/a2bec9d0ad34b98fd44b2a6f7d52478b31bbdaf1/player.js",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/player.js",
       "sha256": "77aef0d6b7ca8eef33d592e82c1f36e7897952bf3578c9618053d9443020ece2"
     },
     "react.production.min.js": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/a2bec9d0ad34b98fd44b2a6f7d52478b31bbdaf1/react.production.min.js",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/react.production.min.js",
       "sha256": "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd"
     },
     "react-dom.production.min.js": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/a2bec9d0ad34b98fd44b2a6f7d52478b31bbdaf1/react-dom.production.min.js",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/react-dom.production.min.js",
       "sha256": "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d"
     },
     "babel.min.js": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/a2bec9d0ad34b98fd44b2a6f7d52478b31bbdaf1/babel.min.js",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/babel.min.js",
       "sha256": "2623a9e22809915ce789b4461154e277ddce520d5a4320c14d44332a5d0dcea0"
     },
     "yt playlists.txt": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/a2bec9d0ad34b98fd44b2a6f7d52478b31bbdaf1/yt%20playlists.txt",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/yt%20playlists.txt",
       "sha256": "12052090dd74c28bff2014c456d1fdff443bb6c646980e5c6bb508d01d7c65f1"
+    },
+    "cat-Christmas.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/cat-Christmas.webp",
+      "sha256": "97180cceeaa59847063d64fe1b5fa8eedbd636dc0485e6932579aea3e673d4fd"
     }
   }
 }
