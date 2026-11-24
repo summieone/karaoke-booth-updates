@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="buildtag">build NOV24-C pywebview</div>
+<div id="buildtag">build NOV24-D pywebview</div>
 <script>
   /* Self-calibrating fullscreen: report THIS window's title-bar height to the
      positioner script via the window title, so it can shift the window up by
@@ -1199,7 +1199,20 @@ function App() {
       if (stopped) return;
       const r = await updCheck();
       let next = r.lastError ? UPDATE_RETRY_MS : UPDATE_CHECK_MS;
-      if (r.available && updAuto() && updHeld().indexOf(r.available) === -1) {
+      // NOV24-D: the files on disk can be a DIFFERENT build from the page
+      // that is running. That happens whenever an update is applied from
+      // outside the booth - over the venue network, say - because the server
+      // writes the new files but nothing tells the open page to reload. Until
+      // NOV24-D the only cure was closing the booth down and starting it
+      // again, which is exactly what Darren hit on 24 Nov. The server records
+      // what it last applied, so comparing that with the tag this page is
+      // actually showing catches it. Same idle rules as an install: a reload
+      // mid-song is just as unacceptable as an install mid-song.
+      const onDisk = r.installed;
+      const running = updBuildTag();
+      const staleP = !!(onDisk && running && onDisk !== running);
+
+      if ((r.available && updAuto() && updHeld().indexOf(r.available) === -1) || staleP) {
         const b = updBusyRef.current;
         const idleFor = Date.now() - b.lastTouch;
         if (b.busy) {
@@ -1209,6 +1222,14 @@ function App() {
           next = Math.min(next, UPDATE_IDLE_MS - idleFor + 5000);
         } else {
           _updSet({ waitingBecause: null });
+          if (staleP) {
+            // Already on disk - nothing to download, just run it. Cache-bust
+            // so a kiosk browser cannot hand back the page it already has.
+            console.log('[booth-v2] on disk is ' + onDisk + ' but running ' +
+                        running + ' - reloading');
+            location.replace(location.pathname + '?v=' + encodeURIComponent(onDisk));
+            return;
+          }
           if (await updInstall()) return;      // reloads the page
         }
       } else {
@@ -4547,6 +4568,15 @@ function CategoryTile({ name, count, onClick }) {
   const t = useTr();
   const s = styleForCat(name);
   const [art, setArt] = React.useState(() => _catArtCache[name] || 'loading');
+  // NOV24-D: two places a tile image can live. The songs folder
+  // (_categories/<Name>.png) is the venue's own and always wins - nothing
+  // here overwrites what staff put there. If there is none, fall back to
+  // 'cat-<Name>.webp', which ships with the release and so reaches every
+  // booth automatically. The updater cannot write subfolders, which is why
+  // these are plain prefixed files next to the app rather than in _categories.
+  const [imgSrc, setImgSrc] = React.useState(
+    () => '/api/category-image/' + encodeURIComponent(name));
+  const triedShipped = React.useRef(false);
   return (
     <button onClick={onClick} title={name} style={{
       padding: 0, borderRadius: 12, overflow: 'hidden', cursor: 'pointer',
@@ -4556,10 +4586,17 @@ function CategoryTile({ name, count, onClick }) {
       boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
     }}>
       {art !== 'none' && (
-        <img src={'/api/category-image/' + encodeURIComponent(name)} alt=""
+        <img src={imgSrc} alt=""
           draggable="false"
           onLoad={() => { _catArtCache[name] = 'ok'; setArt('ok'); }}
-          onError={() => { _catArtCache[name] = 'none'; setArt('none'); }}
+          onError={() => {
+            if (!triedShipped.current) {
+              triedShipped.current = true;
+              setImgSrc('/cat-' + encodeURIComponent(name) + '.webp');
+              return;
+            }
+            _catArtCache[name] = 'none'; setArt('none');
+          }}
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%',
             objectFit: 'cover', opacity: art === 'ok' ? 1 : 0,
             transition: 'opacity 0.25s' }}/>
