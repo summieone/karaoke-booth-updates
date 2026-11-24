@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="buildtag">build NOV24-A pywebview</div>
+<div id="buildtag">build NOV24-C pywebview</div>
 <script>
   /* Self-calibrating fullscreen: report THIS window's title-bar height to the
      positioner script via the window title, so it can shift the window up by
@@ -1022,6 +1022,16 @@ function analyticsDailyBuckets(maxDays) {
       modeMs: { browse: 0, swipe: 0, radio: 0 }, topSongs: [], topMissing: [], wanted: [] };
     days[d].perf = pd[d];
   });
+  // NOV24-A: stamp today's bucket with the build this booth is running.
+  // The hub stores each day's bucket wholesale ("booth is authoritative for
+  // its own day") and uploads that history hourly, so this is what carries a
+  // booth's version off-site. Before it, the ONLY way to know what a booth
+  // was running was to walk up to it and read the tag bottom-left - which
+  // cost a whole evening of guessing during the November rollout.
+  const _today = new Date().toISOString().slice(0, 10);
+  if (!days[_today]) days[_today] = { plays: 0, adds: 0, searches: 0, empties: 0, errors: 0,
+    supers: 0, modeMs: { browse: 0, swipe: 0, radio: 0 }, topSongs: [], topMissing: [], wanted: [] };
+  days[_today].build = updBuildTag() || null;
   return days;
 }
 
@@ -1546,6 +1556,9 @@ function App() {
       }
       const payload = {
         roomId:        roomId(),
+        // NOV24-A: what this booth is actually running, every beat, so the hub
+        // dashboard can show it without anyone reading a screen.
+        buildTag:      updBuildTag(),
         roomName:      localStorage.getItem('karaokeRoomName') || roomId(),
         venueName:     localStorage.getItem('karaokeVenueName') || '',
         sessionActive: sessionActive,
@@ -2098,8 +2111,13 @@ function App() {
         {/* Venue logo + name = Home button, back to the category page. */}
         <button onClick={goBrowseHome} title={tr('homeWord', language)} style={{
           display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
-          background: 'rgba(255,255,255,0.03)', borderRadius: 10,
-          border: '1px solid rgba(255,255,255,0.08)',
+          // NOV24-C: panel fill and hairline removed. At 3-8% white they were
+          // meant to be invisible on a dark screen; on the studio monitor they
+          // read as a light grey box round the venue name. Kept as transparent
+          // rather than deleted so the 1px border still occupies its space and
+          // nothing shifts.
+          background: 'transparent', borderRadius: 10,
+          border: '1px solid transparent',
           padding: '4px 10px 4px 6px', marginLeft: -6,
           font: 'inherit', textAlign: 'left',
         }}>
@@ -2113,8 +2131,10 @@ function App() {
             ★ {venueName}
           </div>
         </button>
-        <div style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,0.04)',
-          borderRadius: 12, padding: 4, border: '1px solid rgba(255,255,255,0.08)', marginLeft: 12 }}>
+        {/* NOV24-C: same as the logo - no fill, no hairline. The selected tab
+            still shows its own accent colour, so which one is active is clear. */}
+        <div style={{ display: 'flex', gap: 4, background: 'transparent',
+          borderRadius: 12, padding: 4, border: '1px solid transparent', marginLeft: 12 }}>
           {[['browse','🎵',tr('browse',language)],['swipe','✨',tr('swipe',language)],['radio','📡',tr('radio',language)]].map(([k, emoji, label]) => (
             <button key={k} onClick={() => setTab(k)} style={{
               padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 800,
