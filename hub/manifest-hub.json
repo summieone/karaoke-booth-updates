@@ -1,0 +1,10 @@
+{
+  "version": "2026-11-25-A",
+  "notes": "Self-update; Start clock keep welcome counts from the booking start",
+  "published": "2026-11-25 08:19",
+  "exe": {
+    "url": "https://github.com/summieone/karaoke-booth-updates/releases/download/hub-2026-11-25-A/BarHubTray.exe",
+    "sha256": "f52f9fbfb22f13314381ff45f02b3efa2c912e3b4e516c032693e863acaea2b6",
+    "size": 34455740
+  }
+}
