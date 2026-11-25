@@ -1,38 +1,98 @@
 {
-  "version": "NOV24-D",
-  "notes": "NOV24-D: Christmas now has proper artwork, and booths pick up an update without being restarted - if the files on disk are a newer build than the page running, the booth reloads itself while the room is empty. Category artwork can now ship with a release; anything in the songs folder still wins over it.",
+  "version": "2026-11-24-E",
+  "notes": "2026-11-24-E: the venue's full set of category artwork now ships with the update, so booths missing tile images get them automatically (anything in the booth's own songs folder still wins). Build tags are now a full date, because NOV24 read like the year. Includes Christmas artwork, the self-reload after an update, and the fix for the squashed tiles.",
   "files": {
     "booth-v2.html": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/booth-v2.html",
-      "sha256": "74f5725f6b94e01a2cd7db4babcafc853be9227294cc37da1d4f722901c268e0"
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/booth-v2.html",
+      "sha256": "73e2d27565b347c44c4b6d825806fa2dddbc06e39716f3edce5bba37673c6d7d"
     },
     "venue-logo.webp": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/venue-logo.webp",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/venue-logo.webp",
       "sha256": "ad005bd2bd420a1c57da44d37be0947e05ebfacaad18cb8d12f3dedbe60455ad"
     },
     "player.js": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/player.js",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/player.js",
       "sha256": "77aef0d6b7ca8eef33d592e82c1f36e7897952bf3578c9618053d9443020ece2"
     },
     "react.production.min.js": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/react.production.min.js",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/react.production.min.js",
       "sha256": "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd"
     },
     "react-dom.production.min.js": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/react-dom.production.min.js",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/react-dom.production.min.js",
       "sha256": "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d"
     },
     "babel.min.js": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/babel.min.js",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/babel.min.js",
       "sha256": "2623a9e22809915ce789b4461154e277ddce520d5a4320c14d44332a5d0dcea0"
     },
     "yt playlists.txt": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/yt%20playlists.txt",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/yt%20playlists.txt",
       "sha256": "12052090dd74c28bff2014c456d1fdff443bb6c646980e5c6bb508d01d7c65f1"
     },
+    "cat-80s Anthems.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-80s%20Anthems.webp",
+      "sha256": "e1e1e2fbeabce619a44539e671b553dd837ff1a7959f928422caa88fc6bc5e30"
+    },
+    "cat-90s Bangers.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-90s%20Bangers.webp",
+      "sha256": "48474f8198c623e10ae1e84a1614f2591f5b9c36ad05a6027fc991a1b0bca73f"
+    },
+    "cat-Big Ballads.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-Big%20Ballads.webp",
+      "sha256": "32154ad544309650fb53951c5f8830147eccffa8a28288d29aa4f3c1bd675f1d"
+    },
     "cat-Christmas.webp": {
-      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/5c7c7097e2b203bd13c29d987d349a5ca48f3411/cat-Christmas.webp",
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-Christmas.webp",
       "sha256": "97180cceeaa59847063d64fe1b5fa8eedbd636dc0485e6932579aea3e673d4fd"
+    },
+    "cat-Country Roads.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-Country%20Roads.webp",
+      "sha256": "368aceee87ccf165956370e857ff0941e74050b591b05a1430d303895ed440b2"
+    },
+    "cat-Disco Fever.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-Disco%20Fever.webp",
+      "sha256": "1b4bf3f668305f6f2ad77a2d1587e0de8d1ef6c232d0c5a7136b41f21c9b9be6"
+    },
+    "cat-Duets.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-Duets.webp",
+      "sha256": "3706eede23d0ccaf05e7203e95f3ee475175192f6813bb0377ba4e21680a59c9"
+    },
+    "cat-Girls Just Want to Have Fun.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-Girls%20Just%20Want%20to%20Have%20Fun.webp",
+      "sha256": "0cd66c587103031207f591597fff66fc8e558c0b5b3887b5c58e6f99b6320444"
+    },
+    "cat-Hip Hop.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-Hip%20Hop.webp",
+      "sha256": "f7f76ad189c23e11993421ca9d8cea28937cd480a2da6c0164ad93c7ff4c65fd"
+    },
+    "cat-Indie Gems.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-Indie%20Gems.webp",
+      "sha256": "7e25e6bb826b6f6118ac2540e26d916bfb3134e9c4f260337f55803821972d41"
+    },
+    "cat-Most Popular.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-Most%20Popular.webp",
+      "sha256": "20917462b5277744c390272b1b5a35f82e45a90d2c825c553cf4fc5286350f76"
+    },
+    "cat-Musical Theatre.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-Musical%20Theatre.webp",
+      "sha256": "339a885565d9f8a2d8445203976a7d1d2f1a0fb683cdb1c952dd6b6609bb14ed"
+    },
+    "cat-One Hit Wonders.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-One%20Hit%20Wonders.webp",
+      "sha256": "0aac7157f62e8f6fcfbe9528ca4fe042f841dcefee81094e2d594c905d8d51b0"
+    },
+    "cat-Party Starters.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-Party%20Starters.webp",
+      "sha256": "351d3b189e056b276bc5e255402fc2bb6143568b36d9a2029277b66221cc6932"
+    },
+    "cat-R&B Vibes.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-R%26B%20Vibes.webp",
+      "sha256": "29df349dcd5980cf7694b547af641f87ab320df5d5098c78ac1d2d723a4b7a5b"
+    },
+    "cat-Rock Classics.webp": {
+      "url": "https://raw.githubusercontent.com/summieone/karaoke-booth-updates/4a37c2eca10107daee93dfd6eb1a876fa9f576fd/cat-Rock%20Classics.webp",
+      "sha256": "c65a3aa058b0de46c244db623b7ad5433381a3291e7fc227551784eceee32377"
     }
   }
 }
