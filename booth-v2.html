@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="buildtag">build 2026-11-25-J pywebview</div>
+<div id="buildtag">build 2026-11-25-K pywebview</div>
 <script>
   /* Self-calibrating fullscreen: report THIS window's title-bar height to the
      positioner script via the window title, so it can shift the window up by
@@ -888,6 +888,27 @@ const ANALYTICS_KEY = 'karaokeAnalyticsV1';
 const ANALYTICS_CAPS = { plays: 4000, adds: 4000, searches: 1500, supers: 1500 };
 const ANALYTICS_MODE_DAYS = 180;  // keep ~6 months of per-day mode dwell
 let _analyticsHbAt = 0;           // throttle: last time per-day buckets rode a heartbeat
+// 2026-11-25-K: PC health (CPU temp/load, RAM, disk, uptime) written every 60s by
+// the booth-health agent (SYSTEM task) to booth-health.json in the booth folder.
+// Read every 30s by the heartbeat effect into this plain variable - never React
+// state, so it cannot cause a re-render. null until the agent is installed.
+let _boothHealth = null;
+let _boothHealthAt = 0;
+function refreshBoothHealth() {
+  if (Date.now() - _boothHealthAt < 30000) return;
+  _boothHealthAt = Date.now();
+  fetch('/booth-health.json', { cache: 'no-store' })
+    .then(r => r.ok ? r.json() : null)
+    .then(h => { _boothHealth = (h && typeof h === 'object' && h.v) ? h : null; })
+    .catch(() => { _boothHealth = null; });
+}
+function boothHealthForHeartbeat() {
+  const h = _boothHealth;
+  if (!h) return null;
+  // ageS measured on the booth's own clock (same PC as the agent), so the hub
+  // can tell "agent stopped" without trusting clocks across PCs.
+  return Object.assign({}, h, { ageS: h.ts ? Math.max(0, Math.round(Date.now() / 1000 - h.ts)) : null });
+}
 
 function analyticsLoad() {
   try { const o = JSON.parse(localStorage.getItem(ANALYTICS_KEY)); return (o && typeof o === 'object') ? o : {}; }
@@ -1601,9 +1622,12 @@ function App() {
         // Compact performance summary (sent every beat, small) — the hub turns
         // this into a 🟢/🟠/🔴 speed pill so staff can spot a slow booth.
         perf:          analyticsPerfSummary(),
+        // 2026-11-25-K: PC health from the booth-health agent (null if not installed).
+        health:        boothHealthForHeartbeat(),
         ts:            Date.now(),
         boothVersion:  'v2',
       };
+      refreshBoothHealth();   // throttled to 30s; the result rides the NEXT beat
       fetch(hub + '/api/heartbeat', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
